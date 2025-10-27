@@ -8,14 +8,23 @@ FROM php:8.2-fpm AS app
 
 ARG UID=1000
 ARG GID=1000
+ARG DEBIAN_MIRROR=""
 
-RUN rm -f /etc/apt/sources.list.d/*.list && \
-    printf '%s\n' \
-        'deb https://mirrors.ustc.edu.cn/debian bookworm main contrib non-free non-free-firmware' \
-        'deb https://mirrors.ustc.edu.cn/debian bookworm-updates main contrib non-free non-free-firmware' \
-        'deb https://mirrors.ustc.edu.cn/debian-security bookworm-security main contrib non-free non-free-firmware' \
-    > /etc/apt/sources.list && \
-    apt-get update && \
+RUN set -eux; \
+    mirror="${DEBIAN_MIRROR}"; \
+    if [ -n "${mirror}" ]; then \
+        case "${mirror}" in \
+            *://*) ;; \
+            *) mirror="https://${mirror}";; \
+        esac; \
+        sed -i "s|http://deb.debian.org/debian|${mirror}/debian|g" /etc/apt/sources.list; \
+        sed -i "s|https://deb.debian.org/debian|${mirror}/debian|g" /etc/apt/sources.list; \
+        sed -i "s|http://security.debian.org/debian-security|${mirror}/debian-security|g" /etc/apt/sources.list; \
+        sed -i "s|https://security.debian.org/debian-security|${mirror}/debian-security|g" /etc/apt/sources.list; \
+    fi; \
+    rm -f /etc/apt/sources.list.d/*.list; \
+    export DEBIAN_FRONTEND=noninteractive; \
+    apt-get update; \
     apt-get install -y --no-install-recommends \
         bash \
         git \
@@ -26,18 +35,19 @@ RUN rm -f /etc/apt/sources.list.d/*.list && \
         libjpeg62-turbo-dev \
         libfreetype6-dev \
         zlib1g-dev \
-        pkg-config \
-        && \
+        pkg-config; \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=composer /usr/bin/composer /usr/bin/composer
 COPY --from=node /usr/local /usr/local
 
-RUN groupadd --gid ${GID} app &&     useradd --uid ${UID} --gid app --create-home --shell /bin/bash app
+RUN groupadd --gid "${GID}" app && \
+    useradd --uid "${UID}" --gid app --create-home --shell /bin/bash app
 
 WORKDIR /var/www/html
 
-ENV COMPOSER_ALLOW_SUPERUSER=1     PATH="/usr/local/node/bin:$PATH"
+ENV COMPOSER_ALLOW_SUPERUSER=1
+ENV PATH="/usr/local/node/bin:${PATH}"
 
 COPY docker/php/conf.d/app.ini /usr/local/etc/php/conf.d/app.ini
 COPY docker/php/php-fpm.d/zz-app.conf /usr/local/etc/php-fpm.d/zz-app.conf
