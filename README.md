@@ -6,7 +6,7 @@
 
 - **Laravel 应用 (`portal/`)**：提供 API、后台管理、前台展示、捐赠接口等业务逻辑。前端使用 Inertia.js 将 React 组件嵌入到 Blade 布局中，统一风格。
 - **队列与后台任务**：`queue` 服务复用应用镜像，运行 `php artisan queue:listen` 处理异步任务（例如续期记录）。
-- **MySQL 5.7**：既保存 Laravel 本身数据，也通过独立连接 `sourcebans` 访问原来的 SourceBans 表结构。
+- **MySQL 5.7**：既保存 Laravel 本身数据，也通过独立连接 `sourcebans` 访问原来的 SourceBans、聊天记录以及 L4D2 插件统计表。
 - **Redis**：作为缓存与队列驱动。
 - **Mailpit**：本地开发时的邮件收发测试。
 - **Nginx**：静态资源与 PHP-FPM 之间的反向代理。
@@ -23,6 +23,7 @@
 | `docker/app/entrypoint.sh` | 容器入口脚本，自动安装 Composer / NPM 依赖。 |
 | `docker-compose.yml` | 本地开发编排文件，包含 app/web/queue/db/redis/mailpit。 |
 | `.github/workflows/docker.yml` | GitHub Actions 构建并推送容器镜像。 |
+| `database.sql` | 聚合 SourceBans + L4D2 统计 + 聊天记录的建表脚本，可一键导入。 |
 
 ## 使用指南
 
@@ -40,8 +41,17 @@
    根据下文“必须调整的配置”修改 `.env` 内容。
 
 2. **导入旧数据库**
-   - 将原始 `database.sql` 中的 SourceBans 相关表导入到 MySQL 5.7 实例。
-   - 如果包含 L4D2 统计、RPG、Lilac 等表，建议先导入至 `sourcebans` 数据库或新建独立库后调整 `.env` 对应连接。
+   - 使用仓库根目录提供的 `database.sql` 可一次性创建 SourceBans 主表、管理员续期、L4D2 统计、RPG/Lilac 插件以及新的 `chat_log` 聊天记录表：
+     ```bash
+     mysql -h 127.0.0.1 -P33060 -u root -psecret < database.sql
+     ```
+     （端口、账号、密码请按实际修改。）
+   - 迁移旧环境数据时，可对需要的表执行 `mysqldump --no-create-info` 导出纯数据，再导入到 `sourcebans` 库。例如：
+     ```bash
+     mysqldump -h old-host -u user -p --skip-lock-tables chat chat_log > chat_log_data.sql
+     mysql -h 127.0.0.1 -P33060 -u root -psecret sourcebans < chat_log_data.sql
+     ```
+     同理可对 `players`、`maps`、`RPG` 等插件表重复上述流程。
 
 3. **启动容器**
    ```bash
@@ -49,6 +59,16 @@
    ```
    - 首次构建可加入 `--build-arg DEBIAN_MIRROR=mirrors.ustc.edu.cn` 等参数（例如：`docker compose build --build-arg DEBIAN_MIRROR=mirrors.ustc.edu.cn`）来使用本地镜像源。
    - 构建完成后访问 <http://localhost:8080>。
+
+   如果你不想依赖 Docker Compose，可使用仓库提供的脚本通过 `docker run` 方式一键启动：
+   ```bash
+   # 首次执行会自动构建镜像并创建网络/数据卷
+   docker/scripts/run-stack.sh
+   # 停止所有容器
+   docker/scripts/stop-stack.sh
+   ```
+   - `docker/.env.stack` 保存了脚本所需的默认变量（端口、数据库密码等），可以按需修改或在命令前自行导出环境变量覆盖。
+   - 脚本会启动 `anneweb-app/queue/web/db/redis/mailpit` 六个容器，与 Docker Compose 行为一致。
 
 4. **执行迁移与资产构建**
    ```bash

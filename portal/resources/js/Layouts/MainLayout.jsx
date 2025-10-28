@@ -6,6 +6,7 @@ const navigation = [
     { label: '禁言禁麦', href: '/comms', key: 'comms.index' },
     { label: '服务器', href: '/servers', key: 'servers.index' },
     { label: 'L4D2 统计', href: '/stats/l4d2', key: 'stats.l4d2' },
+    { label: '聊天记录', href: '/chat', key: 'chat.index' },
     { label: '提交举报', href: '/submit', key: 'submit.create' },
     { label: '封禁申诉', href: '/protest', key: 'protest.create' },
     { label: '捐赠', href: '/donate', key: 'donate' },
