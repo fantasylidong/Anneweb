@@ -80,7 +80,7 @@ services:
       SOURCEBANS_DB_PASSWORD: sourcebans
 
   db:
-    image: mysql:5.7.35
+    image: morzlee/database:mysql-5.7-tuned
     container_name: anneweb-db
     command: --sql-mode="ALLOW_INVALID_DATES" --explicit_defaults_for_timestamp=0
     restart: unless-stopped
@@ -96,7 +96,7 @@ services:
       - db-data:/var/lib/mysql
 
   redis:
-    image: redis:7.4-alpine
+    image: morzlee/database:redis-7.4-tuned
     container_name: anneweb-redis
     restart: unless-stopped
     ports:

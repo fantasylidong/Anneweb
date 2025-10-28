@@ -30,7 +30,7 @@ jobs:
           username: ${{ secrets.DOCKERUSER }}
           password: ${{ secrets.DOCKERPASSWORD }}
 
-      - name: Build and push image
+      - name: Build and push app image
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -39,3 +39,23 @@ jobs:
           tags: |
             morzlee/anneweb:latest
             morzlee/anneweb:${{ github.sha }}
+
+      - name: Build and push MySQL image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/database/mysql/Dockerfile
+          push: true
+          tags: |
+            morzlee/database:mysql-5.7-tuned
+            morzlee/database:mysql-${{ github.sha }}
+
+      - name: Build and push Redis image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/database/redis/Dockerfile
+          push: true
+          tags: |
+            morzlee/database:redis-7.4-tuned
+            morzlee/database:redis-${{ github.sha }}

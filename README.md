@@ -7,7 +7,7 @@
 - **Laravel 应用 (`portal/`)**：提供 API、后台管理、前台展示、捐赠接口等业务逻辑。前端使用 Inertia.js 将 React 组件嵌入到 Blade 布局中，统一风格。
 - **队列与后台任务**：`queue` 服务复用应用镜像，运行 `php artisan queue:listen` 处理异步任务（例如续期记录）。
 - **MySQL 5.7**：既保存 Laravel 本身数据，也通过独立连接 `sourcebans` 访问原来的 SourceBans、聊天记录以及 L4D2 插件统计表。
-- **Redis**：作为缓存与队列驱动。
+- **Redis**：作为缓存与队列驱动（提供自定义调优镜像 `morzlee/database:redis-7.4-tuned`）。
 - **Mailpit**：本地开发时的邮件收发测试。
 - **Nginx**：静态资源与 PHP-FPM 之间的反向代理。
 - **CI/CD**：`.github/workflows/docker.yml` 使用 Buildx 构建多架构镜像并推送到 `morzlee/anneweb`。
@@ -22,7 +22,9 @@
 | `docker/php/` | PHP INI 与 FPM Pool 定制。 |
 | `docker/app/entrypoint.sh` | 容器入口脚本，自动安装 Composer / NPM 依赖。 |
 | `docker-compose.yml` | 本地开发编排文件，包含 app/web/queue/db/redis/mailpit。 |
-| `.github/workflows/docker.yml` | GitHub Actions 构建并推送容器镜像。 |
+| `docker/database/mysql/` | MySQL 5.7 调优镜像 Dockerfile 与配置（默认启用域名认证）。 |
+| `docker/database/redis/` | Redis 7.4 调优镜像 Dockerfile 与配置。 |
+| `.github/workflows/docker.yml` | GitHub Actions 构建并推送应用与数据库镜像。 |
 | `database.sql` | 聚合 SourceBans + L4D2 统计 + 聊天记录的建表脚本，可一键导入。 |
 
 ## 使用指南
@@ -68,7 +70,29 @@
    docker/scripts/stop-stack.sh
    ```
    - `docker/.env.stack` 保存了脚本所需的默认变量（端口、数据库密码等），可以按需修改或在命令前自行导出环境变量覆盖。
-   - 脚本会启动 `anneweb-app/queue/web/db/redis/mailpit` 六个容器，与 Docker Compose 行为一致。
+   - 脚本会启动 `anneweb-app/queue/web/db/redis/mailpit` 六个容器，其中数据库和缓存使用调优镜像 `morzlee/database:mysql-5.7-tuned` 与 `morzlee/database:redis-7.4-tuned`。
+
+   如需单独运行数据库镜像，可按以下方式启动：
+   ```bash
+   # MySQL（支持域名授权，自带 my.cnf 调优）
+   docker run -d --name anneweb-db \
+     -p 33060:3306 \
+     -e MYSQL_ROOT_PASSWORD=secret \
+     -e MYSQL_DATABASE=anneweb \
+     -v anneweb-db-data:/var/lib/mysql \
+     morzlee/database:mysql-5.7-tuned
+
+   # Redis（AOF 持久化 + LRU 淘汰）
+   docker run -d --name anneweb-redis \
+     -p 63790:6379 \
+     -v anneweb-redis-data:/data \
+     morzlee/database:redis-7.4-tuned
+   ```
+   - MySQL 镜像默认启用 `skip-name-resolve=0`，因此可以使用域名作为授权主机，例如：
+     ```sql
+     GRANT ALL ON anneweb.* TO 'anneweb'@'%.anne.example.com' IDENTIFIED BY 'super-secret';
+     FLUSH PRIVILEGES;
+     ```
 
 4. **执行迁移与资产构建**
    ```bash

@@ -21,8 +21,8 @@ MYSQL_DATABASE="${MYSQL_DATABASE:-anneweb}"
 MYSQL_USER="${MYSQL_USER:-anneweb}"
 MYSQL_PASSWORD="${MYSQL_PASSWORD:-anneweb}"
 SOURCEBANS_DATABASE="${SOURCEBANS_DATABASE:-sourcebans}"
-SOURCEBANS_USER="${SOURCEBANS_USER:-sourcebans}"
-SOURCEBANS_PASSWORD="${SOURCEBANS_PASSWORD:-sourcebans}"
+SOURCEBANS_USER="${SOURCEBANS_USER:-anneweb}"
+SOURCEBANS_PASSWORD="${SOURCEBANS_PASSWORD:-anneweb}"
 MYSQL_HOST_PORT="${MYSQL_HOST_PORT:-33060}"
 
 REDIS_HOST_PORT="${REDIS_HOST_PORT:-63790}"
@@ -50,10 +50,12 @@ NODE_VOLUME="${NODE_VOLUME:-${PROJECT_NAME}-node-modules}"
 STORAGE_VOLUME="${STORAGE_VOLUME:-${PROJECT_NAME}-storage}"
 
 # Images for dependencies
-DB_IMAGE="${DB_IMAGE:-mysql:5.7.35}"
-REDIS_IMAGE="${REDIS_IMAGE:-redis:7.4-alpine}"
+DB_IMAGE="${DB_IMAGE:-morzlee/database:mysql-5.7-tuned}"
+REDIS_IMAGE="${REDIS_IMAGE:-morzlee/database:redis-7.4-tuned}"
 MAILPIT_IMAGE="${MAILPIT_IMAGE:-axllent/mailpit:v1.21}"
 WEB_IMAGE="${WEB_IMAGE:-nginx:1.27-alpine}"
+DB_DOCKERFILE="${DB_DOCKERFILE:-docker/database/mysql/Dockerfile}"
+REDIS_DOCKERFILE="${REDIS_DOCKERFILE:-docker/database/redis/Dockerfile}"
 
 function ensure_network() {
     if ! docker network inspect "$NETWORK_NAME" > /dev/null 2>&1; then
@@ -75,6 +77,23 @@ function ensure_app_image() {
         echo "[run-stack] 未找到镜像 ${APP_IMAGE}，开始构建..."
         docker build -f docker/app.Dockerfile -t "$APP_IMAGE" .
     fi
+}
+
+function ensure_dependency_image() {
+    local image=$1
+    local dockerfile=$2
+
+    if docker image inspect "$image" > /dev/null 2>&1; then
+        return
+    fi
+
+    if [ ! -f "$dockerfile" ]; then
+        echo "[run-stack] 未找到构建文件 ${dockerfile}，无法构建镜像 ${image}" >&2
+        exit 1
+    fi
+
+    echo "[run-stack] 未找到镜像 ${image}，使用 ${dockerfile} 构建..."
+    docker build -f "$dockerfile" -t "$image" .
 }
 
 function start_container() {
@@ -103,6 +122,8 @@ ensure_volume "$COMPOSER_VOLUME"
 ensure_volume "$NODE_VOLUME"
 ensure_volume "$STORAGE_VOLUME"
 ensure_app_image
+ensure_dependency_image "$DB_IMAGE" "$DB_DOCKERFILE"
+ensure_dependency_image "$REDIS_IMAGE" "$REDIS_DOCKERFILE"
 
 # Database
 start_container "$DB_CONTAINER" \
