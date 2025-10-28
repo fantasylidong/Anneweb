@@ -77,8 +77,7 @@
    # MySQL（支持域名授权，自带 my.cnf 调优）
    docker run -d --name anneweb-db \
      -p 33060:3306 \
-     -e MYSQL_ROOT_PASSWORD=secret \
-     -e MYSQL_DATABASE=anneweb \
+     --env-file /path/to/Anneweb/docker/env/mysql.env \
      -v anneweb-db-data:/var/lib/mysql \
      morzlee/database:mysql-5.7-tuned
 
@@ -93,6 +92,68 @@
      GRANT ALL ON anneweb.* TO 'anneweb'@'%.anne.example.com' IDENTIFIED BY 'super-secret';
      FLUSH PRIVILEGES;
      ```
+
+   **若希望完全通过 `docker run` 方式部署并挂载代码/配置，建议按如下步骤：**
+
+   ```bash
+   # 1. 创建专用网络
+   docker network create anneweb-net
+
+   # 2. 启动数据库（挂载数据目录便于备份）
+   docker run -d --name anneweb-db \
+     --network anneweb-net \
+     -p 33060:3306 \
+     --env-file /path/to/Anneweb/docker/env/mysql.env \
+     -v /data/anneweb/mysql:/var/lib/mysql \
+     morzlee/database:mysql-5.7-tuned
+
+   # 3. 启动 Redis（挂载 AOF/RDB）
+   docker run -d --name anneweb-redis \
+     --network anneweb-net \
+     -p 63790:6379 \
+     -v /data/anneweb/redis:/data \
+     morzlee/database:redis-7.4-tuned
+
+   # 4. 启动 PHP 应用（挂载代码、storage、PHP 配置）
+   docker run -d --name anneweb-app \
+     --network anneweb-net \
+     --add-host host.docker.internal:host-gateway \
+     -v /path/to/Anneweb/portal:/var/www/html \
+     -v /path/to/Anneweb/docker/php/conf.d/app.ini:/usr/local/etc/php/conf.d/app.ini:ro \
+     -v /path/to/Anneweb/docker/php/php-fpm.d/zz-app.conf:/usr/local/etc/php-fpm.d/zz-app.conf:ro \
+     -v /path/to/Anneweb/storage:/var/www/html/storage \
+     morzlee/anneweb:latest
+
+   # 5. 启动 Mailpit（可选，提供本地邮件收发）
+   docker run -d --name anneweb-mailpit \
+     --network anneweb-net \
+     -p 8025:8025 -p 1025:1025 \
+     axllent/mailpit:v1.21
+
+   # 6. 启动队列消费者（复用同一镜像与挂载）
+   docker run -d --name anneweb-queue \
+     --network anneweb-net \
+     --add-host host.docker.internal:host-gateway \
+     -v /path/to/Anneweb/portal:/var/www/html \
+     -v /path/to/Anneweb/docker/php/conf.d/app.ini:/usr/local/etc/php/conf.d/app.ini:ro \
+     -v /path/to/Anneweb/docker/php/php-fpm.d/zz-app.conf:/usr/local/etc/php-fpm.d/zz-app.conf:ro \
+     -v /path/to/Anneweb/storage:/var/www/html/storage \
+     morzlee/anneweb:latest \
+     php artisan queue:listen --tries=1
+
+   # 7. 启动 Nginx（挂载前端配置与代码）
+   docker run -d --name anneweb-web \
+     --network anneweb-net \
+     -p 8080:80 \
+     -v /path/to/Anneweb/portal:/var/www/html \
+     -v /path/to/Anneweb/docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro \
+     nginx:1.27-alpine
+   ```
+
+   - 将 `/path/to/Anneweb` 替换成实际代码存放路径；为了避免容器内生成的缓存与 git 冲突，可把 `storage` 目录单独映射到宿主机（如 `/path/to/Anneweb/storage`），并确保拥有写权限（`chmod -R 0775 storage`）。
+   - 数据库密码、默认库等变量请写入 `docker/env/mysql.env`（内容示例：`MYSQL_ROOT_PASSWORD=secret`、`MYSQL_DATABASE=anneweb` 等）；Laravel 应用的 `.env` 会随着代码目录一起挂载，记得把 `DB_HOST` 改为 `anneweb-db`、`REDIS_HOST` 改为 `anneweb-redis`。
+   - 如果希望队列容器共享 Composer 缓存、`node_modules` 等目录，可额外挂载 `-v /path/to/Anneweb/.cache/composer:/tmp/composer` 等路径。
+   - 部署时优先使用 `--env-file` 传递敏感变量，命令里不再显式列出密码或密钥。
 
 4. **执行迁移与资产构建**
    ```bash
